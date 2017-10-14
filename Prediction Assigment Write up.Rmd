@@ -1,0 +1,138 @@
+---
+title: "Prediction Assignment Writeup"
+author: "Rodrigo Chagas"
+date: "12/10/2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Summary
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).      
+
+##Data
+The training data for this project are available here:  
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv  
+The test data are available here:  
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv  
+  
+*The data for this project come from this source: http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har. *
+  
+## Objective
+The goal of your project is to predict the manner in which they did the exercise. This is the "classe" variable in the training set.  
+Participants were asked to perform one set of 10 repetitions of the Unilateral Dumbbell Biceps Curl in 5 different fashions:  
+Classe A: exactly according to the specification  
+Classe B: throwing the elbows to the front  
+Classe C: lifting the dumbbell only halfway  
+Classe D: lowering the dumbbell only halfway  
+Classe E: throwing the hips to the front  
+
+We will use "best" prediction model to predict 20 different test cases, based on the classe variable. We will use Classification Tree model and RandomForest and compare the results.
+
+## Initial Steps
+### Load packages  
+```{r packages, message=FALSE, warning=FALSE}
+library(ggplot2);library(caret);library(randomForest);
+library(rpart);library(rpart.plot);library(party);library("e1071")
+```
+### Reproduceability
+```{r seed, message=FALSE, warning=FALSE}
+set.seed(2906)
+```
+### Functions to make the code easier
+```{r function, message=FALSE, warning=FALSE}
+freeAll <- function(){
+      rm(testFile, testUrl, trainFile, trainUrl)
+}
+
+NA_percent <- function(column, qty_lines){
+      sum(is.na(column)) /qty_lines       
+}
+```
+## Data
+### Load data
+```{r data, message=FALSE, warning=FALSE}
+# Set variables to load data
+trainUrl <-"https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+testUrl <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+trainFile <- "./data/pml-training.csv"
+testFile  <- "./data/pml-testing.csv"
+
+## Create directory if not exists
+if (!file.exists("./data")) {
+      dir.create("./data")
+}
+## Create train file if not exists
+if (!file.exists(trainFile)) {
+      download.file(trainUrl, destfile = trainFile, method = "curl")
+}
+## Create test file if not exists
+if (!file.exists(testFile)) {
+      download.file(testUrl, destfile = testFile, method = "curl")
+}
+
+## Load data
+ds.train <- read.csv(trainFile, na.strings=c("NA","#DIV/0!", ""))
+ds.test  <- read.csv(testFile,  na.strings=c("NA","#DIV/0!", ""))
+```
+###Data Exploratory  
+
+```{r data_exploratory, message=FALSE, warning=FALSE}
+dim(ds.test)
+dim(ds.train)
+```
+*Try str(ds.test) and summary(ds.test)*  
+### Data transformation  
+
+As we have columns with more than 50% of NA values, we will exclude these columns  
+```{r data_cleansing, message=FALSE, warning=FALSE}
+quantity_lines <- dim(ds.train)[1]
+ds.train.percent <- lapply(ds.train, NA_percent, qty_lines = quantity_lines)
+ds.train.clean <- ds.train[,ds.train.percent<0.5]
+ds.train.clean <- ds.train.clean[,-c(1:6)]
+#The remain columns are:
+names(ds.train.clean)
+```
+## Prediction  
+### Create Set of data for training and for test the model  
+Create a training set and test set based on the uploaded data. The training will be 80% of the original data.   
+
+```{r setdata, message=FALSE, warning=FALSE}
+training.partition <- createDataPartition(y=ds.train.clean$classe, p=0.8, list = FALSE)
+training.set <- ds.train.clean[training.partition,]
+testing.set <- ds.train.clean[-training.partition,]
+prop.table(table(training.set$classe))
+prop.table(table(testing.set$classe))
+# Create variables to store the columns that will be used to predict the 20 records
+range.dim <- dim(ds.train.clean)[2]-1
+select.column <- names(ds.train.clean[1:range.dim])
+```
+As we can see the training and test sets have the same proportion of classe.  
+### Create model using Classification Tree and check the results  
+We choose rpart just to use rpart.plot. you can have the same result using ctree.
+```{r ctree, message=FALSE, warning=FALSE}
+fit.ctree <- rpart(classe~., data = training.set, method = "class")
+rpart.plot(fit.ctree, type = 2, main = "Classification Tree")
+# Predict using the model. 
+pred.ctree <- predict(fit.ctree, testing.set, type = "class")
+#ConfusionMatrix
+confusionMatrix(pred.ctree, testing.set$classe)
+```
+Te accuracy fro Classification Tree is `r confusionMatrix(pred.ctree, testing.set$classe)$overall[1]`.  
+### Create model using RandomForest and check the results 
+```{r randomforest, message=FALSE, warning=FALSE}
+fit.random <- randomForest(classe~., data = training.set)
+pred.random <- predict(fit.random, testing.set)    
+confusionMatrix(pred.random, testing.set$classe)
+```
+Te accuracy fro RandomForest is `r confusionMatrix(pred.random, testing.set$classe)$overall[1]`. 
+
+##Conclusion and submission  
+As we can see RandomForest is more accurated then Ctree. 
+The prediction using Randomforest has the following result.
+```{r submission, message=FALSE, warning=FALSE}
+ds.test <- ds.test[,select.column]
+predict(fit.random, new=ds.test)
+```
